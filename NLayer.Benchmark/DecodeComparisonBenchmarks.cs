@@ -2,6 +2,8 @@ using BenchmarkDotNet.Attributes;
 
 namespace NLayer.Benchmark;
 
+public enum DecodeWorkload { Sparse, Entropy }
+
 // Compare the previous checkpoint and current decoder in the same benchmark
 // suite. Setup binds across assembly contexts, avoiding reflection while timing.
 [MemoryDiagnoser]
@@ -15,10 +17,14 @@ public class DecodeComparisonBenchmarks : KernelComparison
     private ReadSpan _readSpan = null!;
     private readonly float[] _output = new float[4096];
 
+    [Params(DecodeWorkload.Sparse, DecodeWorkload.Entropy)]
+    public DecodeWorkload Workload { get; set; }
+
     [GlobalSetup]
     public void Setup()
     {
-        _stream = new MemoryStream(GeneratedMp3.Create(400), writable: false);
+        _stream = new MemoryStream(Workload == DecodeWorkload.Entropy
+            ? EntropyMp3.Create(400) : GeneratedMp3.Create(400), writable: false);
         _file = (IDisposable)Create("NLayer.MpegFile", _stream);
         var type = _file.GetType();
         _seek = type.GetProperty("Position")!.SetMethod!.CreateDelegate<Action<long>>(_file);

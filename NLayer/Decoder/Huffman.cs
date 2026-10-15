@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace NLayer.Decoder
 {
-    class Huffman
+    partial class Huffman
     {
         #region Hardcoded Tables (from the spec)
 
@@ -782,8 +782,10 @@ namespace NLayer.Decoder
             }
         }
 
+#if NLAYER_DISABLE_HUFFMAN_LOOKUP
         static HuffmanListNode[] _llCache = new HuffmanListNode[_codeTables.Length];
         static int[] _llCacheMaxBits = new int[_codeTables.Length];
+#endif
 
         static readonly int[] LIN_BITS = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 6, 8, 10, 13, 4, 5, 6, 7, 8, 9, 11, 13 };
 
@@ -881,6 +883,9 @@ namespace NLayer.Decoder
         // In C#, bit operations are faster than the tree traversal the spec is written for.
         static byte DecodeSymbol(BitReservoir br, int table)
         {
+#if !NLAYER_DISABLE_HUFFMAN_LOOKUP
+            return DecodeSymbolLookup(br, table);
+#else
             // get the huffman node for decoding
             int maxBits;
             var node = GetNode(table, out maxBits);
@@ -915,8 +920,10 @@ namespace NLayer.Decoder
                 // should we advance the reader????  need to check the spec
                 return 0;
             }
+#endif
         }
 
+#if NLAYER_DISABLE_HUFFMAN_LOOKUP
         static HuffmanListNode GetNode(int table, out int maxBits)
         {
             var realIdx = table;
@@ -958,6 +965,7 @@ namespace NLayer.Decoder
 
             return _llCache[realIdx];
         }
+#endif
 
         static HuffmanListNode InitTable(byte[,] tree, out int maxBits)
         {

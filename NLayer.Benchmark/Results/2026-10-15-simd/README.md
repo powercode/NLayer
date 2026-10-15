@@ -1,5 +1,9 @@
 # Synthesis and hybrid MDCT SIMD results
 
+Historical fixture note: the later [entropy pass](../2026-10-15-entropy/README.md)
+corrects table-1 code lengths in the generated MP3. Full-file timings here use the
+previous generator; the independent DSP kernel measurements are unaffected.
+
 The original ten benchmarks were run sequentially with BenchmarkDotNet's default
 measurement settings and `--affinity 1`, first against an archive of commit
 `3d520fe`, then against the SIMD working tree. The original short-run reports in

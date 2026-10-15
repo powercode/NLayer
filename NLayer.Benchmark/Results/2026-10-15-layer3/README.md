@@ -1,5 +1,9 @@
 # Short windows, anti-aliasing and frequency inversion
 
+Historical fixture note: the later [entropy pass](../2026-10-15-entropy/README.md)
+corrects table-1 code lengths in the generated MP3. Full-file timings here use the
+previous generator; the independent DSP kernel measurements are unaffected.
+
 This pass compares against commit `749a3ba`, which already contains vectorized
 synthesis and hybrid overlap/window processing. `Reference` is a saved .NET 10
 build of that checkpoint; `Simd` contains the three additional optimizations.

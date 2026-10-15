@@ -15,12 +15,13 @@ Push-Location $repoRoot
 try {
     if (-not $ScalarAssembly) {
         Invoke-DotNet @('build', 'NLayer/NLayer.csproj', '-c', 'Release', '-f', 'net10.0',
-            '-p:NLayerDisableSimd=true', '-p:OutputPath=bin/scalar/')
+            '-p:NLayerDisableSimd=true', '-p:NLayerDisableHuffmanLookup=true', '-p:OutputPath=bin/scalar/')
         $ScalarAssembly = Join-Path $repoRoot 'NLayer/bin/scalar/NLayer.dll'
     }
     $ScalarAssembly = (Resolve-Path -LiteralPath $ScalarAssembly).Path
     Invoke-DotNet @('build', 'NLayer.Benchmark', '-c', 'Release', '-p:OutputPath=bin/verify/')
     $verifier = Join-Path $PSScriptRoot 'bin/verify/NLayer.Benchmark.dll'
+    Invoke-DotNet @($verifier, '--verify-huffman', $ScalarAssembly)
 
     # Each invocation is a fresh runtime; these switches are read at startup.
     $env:DOTNET_EnableAVX = $null

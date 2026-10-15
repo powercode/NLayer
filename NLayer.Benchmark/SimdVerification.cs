@@ -196,7 +196,7 @@ internal static class SimdVerification
 
     private static void VerifyFiles(DecoderAssembly scalar, DecoderAssembly vector)
     {
-        var mp3 = GeneratedMp3.Create(40);
+        foreach (var mp3 in new[] { GeneratedMp3.Create(40), EntropyMp3.Create(40) })
         foreach (StereoMode mode in Enum.GetValues<StereoMode>())
         foreach (int size in new[] { 1, 31, 2304, 4097, 16384 })
         foreach (bool span in new[] { false, true })

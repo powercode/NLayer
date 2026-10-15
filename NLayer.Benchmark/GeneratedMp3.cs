@@ -21,7 +21,7 @@ internal static class GeneratedMp3
             Write(0, 9 + 3 + 8); // main_data_begin, private bits, scfsi
             for (int granuleChannel = 0; granuleChannel < 4; granuleChannel++)
             {
-                Write(128, 12); // part2_3_length: 32 pairs * (2 code + 2 sign bits)
+                Write(160, 12); // part2_3_length: 32 pairs * (3 code + 2 sign bits)
                 Write(32, 9);   // big_values
                 Write(180, 8);  // global_gain
                 Write(0, 4);   // scalefac_compress
@@ -31,7 +31,7 @@ internal static class GeneratedMp3
             }
             for (int pair = 0; pair < 128; pair++)
             {
-                Write(0, 2); // table 1: (1, 1)
+                Write(0, 3); // table 1: (1, 1)
                 Write(random.Next(4), 2); // signs
             }
 

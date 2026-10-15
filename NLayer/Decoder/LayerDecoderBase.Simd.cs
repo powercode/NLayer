@@ -92,13 +92,23 @@ namespace NLayer.Decoder
             // Separate multiply/add operations deliberately avoid FMA rounding.
             if (Vector256.IsHardwareAccelerated)
             {
-                for (int i = 0; i < 32; i += 8)
+                // Four independent output groups hide addition latency. Each
+                // lane still visits all sixteen rows in the original order.
+                var a = Simd.Load256(input, 0) * Simd.Load256(DEWINDOW_TABLE, 0);
+                var b = Simd.Load256(input, 8) * Simd.Load256(DEWINDOW_TABLE, 8);
+                var c = Simd.Load256(input, 16) * Simd.Load256(DEWINDOW_TABLE, 16);
+                var d = Simd.Load256(input, 24) * Simd.Load256(DEWINDOW_TABLE, 24);
+                for (int row = 32; row < 512; row += 32)
                 {
-                    var sum = Simd.Load256(input, i) * Simd.Load256(DEWINDOW_TABLE, i);
-                    for (int row = 32; row < 512; row += 32)
-                        sum += Simd.Load256(input, row + i) * Simd.Load256(DEWINDOW_TABLE, row + i);
-                    Simd.Store(sum, output, i);
+                    a += Simd.Load256(input, row) * Simd.Load256(DEWINDOW_TABLE, row);
+                    b += Simd.Load256(input, row + 8) * Simd.Load256(DEWINDOW_TABLE, row + 8);
+                    c += Simd.Load256(input, row + 16) * Simd.Load256(DEWINDOW_TABLE, row + 16);
+                    d += Simd.Load256(input, row + 24) * Simd.Load256(DEWINDOW_TABLE, row + 24);
                 }
+                Simd.Store(a, output, 0);
+                Simd.Store(b, output, 8);
+                Simd.Store(c, output, 16);
+                Simd.Store(d, output, 24);
             }
             else
             {

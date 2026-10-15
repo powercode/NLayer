@@ -4,6 +4,8 @@ The first SIMD implementation and its default-job comparison are documented in
 [the 2026-10-15 results](Results/2026-10-15-simd/README.md).
 The follow-up short-window, anti-aliasing and frequency-inversion pass is recorded
 in [the Layer III results](Results/2026-10-15-layer3/README.md).
+The Huffman lookup and window-accumulation pass is recorded in
+[the entropy results](Results/2026-10-15-entropy/README.md).
 
 Run from the repository root, outside the debugger, using the .NET 10 SDK:
 
@@ -131,3 +133,37 @@ runs to pin benchmark processes to logical CPU zero. Run measurements sequential
 When offline NuGet vulnerability auditing prevents BenchmarkDotNet's generated
 project from restoring, set `$env:NuGetAudit = 'false'` for that measurement shell.
 No repository-wide audit setting is changed.
+
+## Entropy decoding
+
+`HuffmanBenchmarks` measures complete pair/quad decoding, including signs and
+linbits, for tables 1, 13, 31, 32 and 33. Each invocation decodes 256 symbols from
+preallocated reservoir storage crossing the circular-buffer boundary. The reset
+uses a compiled delegate; reflection, stream generation and codebook initialization
+are outside timing. Results are reported per pair/quad, including reset cost / 256.
+`NLAYER_REFERENCE_ASSEMBLY` selects a previous decoder for comparison.
+
+`DecodeComparisonBenchmarks` now has `Sparse` and `Entropy` workloads. Sparse is
+the corrected 128-kbps table-1 fixture. Entropy uses 320-kbps frames, pair tables
+13/16/24/31, linbits, and both count1 tables. It is a synthetic stress workload,
+not a representative music corpus.
+
+The sparse generator formerly wrote two bits for table 1's `(1,1)` code rather
+than three, and undercounted `part2_3_length`. This is corrected. Historical
+reports use the previous generator; new comparisons feed the same corrected
+input to both decoder versions. Kernel reports do not depend on that fixture.
+
+`Verify-Simd.ps1` builds the numerical reference with both `NLayerDisableSimd=true`
+and `NLayerDisableHuffmanLookup=true`. It also runs `--verify-huffman`, checking
+every symbol/table, signs, linbits, bit alignment, wraparound, incomplete prefixes,
+reader positions, and concurrent first use of a shared codebook. To invoke only
+those checks against a saved decoder:
+
+```powershell
+dotnet NLayer.Benchmark/bin/verify/NLayer.Benchmark.dll --verify-huffman C:/path/to/reference/NLayer.dll
+```
+
+The prefix lookup works on every library target. `NLayerDisableHuffmanLookup`
+retains the linked-list implementation as a build-only reference/rollback option.
+The additional four-accumulator window optimization applies only to .NET 10's
+256-bit path; the previous 128-bit loop is retained after measurement.
