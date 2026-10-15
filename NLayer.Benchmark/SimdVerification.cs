@@ -20,6 +20,7 @@ internal static class SimdVerification
         Console.WriteLine($"SIMD: Vector256={Vector256.IsHardwareAccelerated}, Vector128={Vector128.IsHardwareAccelerated}");
         VerifySynthesis(scalar, vector);
         VerifyHybrid(scalar, vector);
+        VerifyLayerIII(scalar, vector);
         VerifyFiles(scalar, vector);
         Console.WriteLine($"PASS: {_comparisons:N0} sample bit patterns match; kernel allocations match zero.");
     }
@@ -103,6 +104,8 @@ internal static class SimdVerification
         var resetA = Bind<Action>(a, "Reset"); var resetB = Bind<Action>(b, "Reset");
         var longA = Bind<Action<float[], float[]>>(a, "LongIMDCT");
         var longB = Bind<Action<float[], float[]>>(b, "LongIMDCT");
+        var shortA = Bind<Action<float[], int, float[]>>(a, "ShortIMDCT");
+        var shortB = Bind<Action<float[], int, float[]>>(b, "ShortIMDCT");
         var random = new Random(234);
         for (int call = 0; call < 128; call++)
         {
@@ -110,6 +113,13 @@ internal static class SimdVerification
             var expected = new float[36]; var actual = new float[36];
             longA(input, expected); longB(input, actual);
             Equal(expected, actual, $"LongIMDCT call={call}");
+            foreach (int offset in new[] { 0, 6, 12 })
+            {
+                var shortExpected = Input(36, call % 10, random);
+                var shortActual = (float[])shortExpected.Clone();
+                shortA(input, offset, shortExpected); shortB(input, offset, shortActual);
+                Equal(shortExpected, shortActual, $"ShortIMDCT call={call} offset={offset}");
+            }
         }
 
         // Legal long -> start -> short/mixed -> stop -> long transitions.
@@ -143,6 +153,45 @@ internal static class SimdVerification
         var work = new float[576];
         AssertNoAllocation(() => applyA(work, 0, 0, false), "scalar hybrid");
         AssertNoAllocation(() => applyB(work, 0, 0, false), "SIMD hybrid");
+        AssertNoAllocation(() => shortB(work, 6, work), "SIMD short transform");
+    }
+
+    private static void VerifyLayerIII(DecoderAssembly scalar, DecoderAssembly vector)
+    {
+        var a = scalar.Create("NLayer.Decoder.LayerIIIDecoder");
+        var b = vector.Create("NLayer.Decoder.LayerIIIDecoder");
+        var antiA = Bind<Action<float[], bool>>(a, "AntiAlias");
+        var antiB = Bind<Action<float[], bool>>(b, "AntiAlias");
+        var invertA = Bind<Action<float[]>>(a, "FrequencyInversion");
+        var invertB = Bind<Action<float[]>>(b, "FrequencyInversion");
+        var random = new Random(891);
+        // Patterns plus an impulse at every spectral line. Extra elements are
+        // sentinels to detect stores past the granule, including the final band.
+        for (int pattern = 0; pattern < 10 + 576; pattern++)
+        {
+            var input = Input(580, pattern < 10 ? pattern : 0, random);
+            if (pattern >= 10) input[pattern - 10] = 1;
+            input[576] = 123; input[577] = -456; input[578] = -0f; input[579] = float.Epsilon;
+            foreach (bool mixed in new[] { false, true })
+            {
+                var expected = (float[])input.Clone(); var actual = (float[])input.Clone();
+                antiA(expected, mixed); antiB(actual, mixed);
+                Equal(expected, actual, $"AntiAlias pattern={pattern} mixed={mixed}");
+                // Also exercise the actual anti-alias -> inversion ordering.
+                invertA(expected); invertB(actual);
+                Equal(expected, actual, $"AntiAlias/inversion pattern={pattern} mixed={mixed}");
+            }
+            var inverted = (float[])input.Clone();
+            var reference = (float[])input.Clone();
+            invertA(reference); invertB(inverted);
+            Equal(reference, inverted, $"FrequencyInversion pattern={pattern}");
+            invertB(inverted);
+            Equal(input, inverted, $"Double inversion pattern={pattern}");
+        }
+        var work = new float[576];
+        AssertNoAllocation(() => antiB(work, false), "SIMD anti-alias long");
+        AssertNoAllocation(() => antiB(work, true), "SIMD anti-alias mixed");
+        AssertNoAllocation(() => invertB(work), "SIMD frequency inversion");
     }
 
     private static void VerifyFiles(DecoderAssembly scalar, DecoderAssembly vector)

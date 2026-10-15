@@ -2,6 +2,8 @@
 
 The first SIMD implementation and its default-job comparison are documented in
 [the 2026-10-15 results](Results/2026-10-15-simd/README.md).
+The follow-up short-window, anti-aliasing and frequency-inversion pass is recorded
+in [the Layer III results](Results/2026-10-15-layer3/README.md).
 
 Run from the repository root, outside the debugger, using the .NET 10 SDK:
 
@@ -110,6 +112,19 @@ $env:NLAYER_SCALAR_ASSEMBLY = (Resolve-Path NLayer/bin/scalar/NLayer.dll).Path
 dotnet run --project NLayer.Benchmark -c Release -- --filter '*StageBenchmarks*' --artifacts BenchmarkDotNet.Artifacts/stages
 Remove-Item Env:NLAYER_SCALAR_ASSEMBLY
 ```
+
+To compare against a previous SIMD checkpoint, set `NLAYER_REFERENCE_ASSEMBLY`
+to that build's absolute DLL path instead. It takes precedence over the scalar
+assembly setting and labels that implementation `Reference` in reports.
+`LayerIIIStageBenchmarks` covers long/mixed anti-aliasing and frequency inversion;
+`HybridStageBenchmarks.ShortIMDCT` isolates the short transform and window.
+
+`DecodeComparisonBenchmarks` compares array/span decoding against the same
+reference assembly using 400 generated frames and a 4,096-float buffer. It reuses
+a decoder, seeks to zero before each timed operation, and decodes to EOF. Seeking
+and decoder reset are included; construction, input generation and delegate
+binding are excluded. Its timings are separate from the original constructor-based
+`MpegFileBenchmarks` workload.
 
 On a hybrid-core CPU, use the same `--affinity 1` mask for baseline and optimized
 runs to pin benchmark processes to logical CPU zero. Run measurements sequentially.

@@ -4,7 +4,7 @@ using BenchmarkDotNet.Attributes;
 
 namespace NLayer.Benchmark;
 
-// Optional comparisons against a separately built scalar assembly. An absolute
+// Optional comparisons against a scalar or previous implementation. An absolute
 // path survives BenchmarkDotNet's change to its generated executable directory.
 public abstract class KernelComparison
 {
@@ -14,18 +14,24 @@ public abstract class KernelComparison
     public string Implementation { get; set; } = "Simd";
 
     public IEnumerable<string> Implementations =>
-        Environment.GetEnvironmentVariable("NLAYER_SCALAR_ASSEMBLY") == null
-            ? ["Simd"] : ["Scalar", "Simd"];
+        Environment.GetEnvironmentVariable("NLAYER_REFERENCE_ASSEMBLY") != null
+            ? ["Reference", "Simd"]
+            : Environment.GetEnvironmentVariable("NLAYER_SCALAR_ASSEMBLY") == null
+                ? ["Simd"] : ["Scalar", "Simd"];
 
-    protected object Create(string name)
+    protected object Create(string name, params object[] arguments)
     {
         var assembly = typeof(MpegFile).Assembly;
-        if (Implementation == "Scalar")
+        if (Implementation == "Scalar" || Implementation == "Reference")
         {
             _context = new AssemblyLoadContext(null, isCollectible: true);
-            assembly = _context.LoadFromAssemblyPath(Environment.GetEnvironmentVariable("NLAYER_SCALAR_ASSEMBLY")!);
+            string variable = Implementation == "Reference" ? "NLAYER_REFERENCE_ASSEMBLY" : "NLAYER_SCALAR_ASSEMBLY";
+            assembly = _context.LoadFromAssemblyPath(Environment.GetEnvironmentVariable(variable)!);
         }
-        return Activator.CreateInstance(assembly.GetType(name, throwOnError: true)!, nonPublic: true)!;
+        var type = assembly.GetType(name, throwOnError: true)!;
+        return arguments.Length == 0
+            ? Activator.CreateInstance(type, nonPublic: true)!
+            : Activator.CreateInstance(type, arguments)!;
     }
 
     protected static T Bind<T>(object instance, string name) where T : Delegate
@@ -39,7 +45,13 @@ public abstract class KernelComparison
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _context?.Unload();
+    public void Cleanup()
+    {
+        DisposeResources();
+        _context?.Unload();
+    }
+
+    protected virtual void DisposeResources() { }
 }
 
 [MemoryDiagnoser]
@@ -114,6 +126,7 @@ public class SynthesisStageBenchmarks : KernelComparison
 public class HybridStageBenchmarks : KernelComparison
 {
     private Action<float[], float[]> _long = null!;
+    private Action<float[], int, float[]> _short = null!;
     private Action<float[], int, int, float[], int> _longBlocks = null!;
     private Action<float[], int, float[]> _shortBlocks = null!;
     private float[] _input = null!;
@@ -126,6 +139,7 @@ public class HybridStageBenchmarks : KernelComparison
     {
         var instance = Create("NLayer.Decoder.LayerIIIDecoder+HybridMDCT");
         _long = Bind<Action<float[], float[]>>(instance, "LongIMDCT");
+        _short = Bind<Action<float[], int, float[]>>(instance, "ShortIMDCT");
         _longBlocks = Bind<Action<float[], int, int, float[], int>>(instance, "LongImpl");
         _shortBlocks = Bind<Action<float[], int, float[]>>(instance, "ShortImpl");
         _input = DecoderAccess.Input();
@@ -135,6 +149,13 @@ public class HybridStageBenchmarks : KernelComparison
     public float LongIMDCT()
     {
         _long(_input, _output);
+        return _output[0];
+    }
+
+    [Benchmark]
+    public float ShortIMDCT()
+    {
+        _short(_input, 6, _output);
         return _output[0];
     }
 

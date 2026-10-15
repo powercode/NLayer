@@ -504,6 +504,13 @@ namespace NLayer.Decoder
                 h[5] = (even_idct[0] - odd_idct[0]) * 3.830648788f;
 
                 /* Rearrange the 6 values from the IDCT to the output vector */
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+                if (Simd.IsSupported)
+                {
+                    WindowShortSimd(h, _swin[2], outvec);
+                    return;
+                }
+#endif
                 outvec[0] = h[3] * _swin[2][0];
                 outvec[1] = h[4] * _swin[2][1];
                 outvec[2] = h[5] * _swin[2][2];
@@ -1945,6 +1952,13 @@ namespace NLayer.Decoder
 
         void AntiAlias(float[] buf, bool mixedBlock)
         {
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+            if (Simd.IsSupported)
+            {
+                AntiAliasSimd(buf, mixedBlock ? 1 : SBLIMIT - 1);
+                return;
+            }
+#endif
             int sblim;
             if (mixedBlock)
             {
@@ -1973,6 +1987,13 @@ namespace NLayer.Decoder
 
         void FrequencyInversion(float[] buf)
         {
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+            if (Simd.IsSupported)
+            {
+                FrequencyInversionSimd(buf);
+                return;
+            }
+#endif
             for (int ss = 1; ss < SSLIMIT; ss += 2)
             {
                 for (int sb = 1; sb < SBLIMIT; sb += 2)
