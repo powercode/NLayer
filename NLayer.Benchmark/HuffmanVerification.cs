@@ -11,6 +11,7 @@ internal static class HuffmanVerification
         var before = new HuffmanHarness(context.Reservoir());
         var type = typeof(MpegFile).Assembly.GetType("NLayer.Decoder.BitReservoir", true)!;
         var after = new HuffmanHarness(Activator.CreateInstance(type, nonPublic: true)!);
+        VerifyReservoir(before, after);
         long cases = 0;
         foreach (int table in Enumerable.Range(1, 33).Where(t => t != 4 && t != 14))
         foreach (var code in HuffmanData.Codes(table))
@@ -109,6 +110,57 @@ internal static class HuffmanVerification
         {
             if (before.BitsRead != after.BitsRead || before.Available != after.Available)
                 throw new InvalidOperationException("Huffman reservoir position differs.");
+        }
+    }
+
+    private static void VerifyReservoir(HuffmanHarness before, HuffmanHarness after)
+    {
+        var random = new Random(32768);
+        long cases = 0;
+        foreach (int size in new[] { 0, 1, 2, 3, 4, 5, 31, 100, 8191 })
+        foreach (int start in new[] { 0, 8188, 8191 })
+        for (int offset = 0; offset < 8; offset++)
+        {
+            var bytes = new byte[size]; random.NextBytes(bytes);
+            for (int count = 0; count <= 32; count++)
+            {
+                before.Load(bytes, offset, start); after.Load(bytes, offset, start);
+                int expected = before.Peek(count, out int expectedRead);
+                int actual = after.Peek(count, out int actualRead);
+                if (expected != actual || expectedRead != actualRead) throw new InvalidOperationException("Reservoir peek mismatch.");
+                if (expectedRead == count)
+                {
+                    if (before.Get(count) != after.Get(count)) throw new InvalidOperationException("Reservoir read mismatch.");
+                    CheckState();
+                    before.Rewind(count); after.Rewind(count);
+                    CheckState();
+                    if (before.Peek(count, out expectedRead) != after.Peek(count, out actualRead) || expectedRead != actualRead)
+                        throw new InvalidOperationException("Reservoir rewind mismatch.");
+                }
+                CheckState();
+                cases++;
+            }
+            before.Load(bytes, offset, start); after.Load(bytes, offset, start);
+            int remaining = size == 0 ? 0 : size * 8 - offset;
+            while (remaining > 0)
+            {
+                int count = Math.Min(remaining, random.Next(1, 33));
+                if (count == 1)
+                {
+                    if (before.GetOne() != after.GetOne()) throw new InvalidOperationException("Reservoir single-bit mismatch.");
+                }
+                else { before.Skip(count); after.Skip(count); }
+                remaining -= count;
+                CheckState();
+                cases++;
+            }
+        }
+        Console.WriteLine($"PASS: {cases:N0} reservoir checks (0..32 bits, truncation, wraparound, skip, rewind and single-bit reads).");
+
+        void CheckState()
+        {
+            if (before.BitsRead != after.BitsRead || before.Available != after.Available)
+                throw new InvalidOperationException("Reservoir state mismatch.");
         }
     }
 

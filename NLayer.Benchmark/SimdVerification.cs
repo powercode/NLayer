@@ -21,8 +21,72 @@ internal static class SimdVerification
         VerifySynthesis(scalar, vector);
         VerifyHybrid(scalar, vector);
         VerifyLayerIII(scalar, vector);
+        VerifyDequantization(vector);
         VerifyFiles(scalar, vector);
         Console.WriteLine($"PASS: {_comparisons:N0} sample bit patterns match; kernel allocations match zero.");
+    }
+
+    private delegate void DequantizeBand(Span<float> samples, int granule, int channel);
+
+    private static void VerifyDequantization(DecoderAssembly assembly)
+    {
+        var decoder = assembly.Create("NLayer.Decoder.LayerIIIDecoder");
+        var type = decoder.GetType();
+        T Field<T>(string name) => (T)type.GetField(name, Methods)!.GetValue(decoder)!;
+        void Set(string name, object value) => type.GetField(name, Methods)!.SetValue(decoder, value);
+        var scalar = Bind<Func<int, float, int, int, float>>(decoder, "Dequantize");
+        var batch = Bind<DequantizeBand>(decoder, "DequantizeSamples");
+        var longBands = (int[][])type.GetField("_sfBandIndexLTable", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var shortBands = (int[][])type.GetField("_sfBandIndexSTable", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var random = new Random(8192);
+        foreach (int rate in Enumerable.Range(0, longBands.Length))
+        {
+            var l = longBands[rate]; var s = shortBands[rate];
+            Set("_sfBandIndexL", l); Set("_sfBandIndexS", s);
+            int cbL = 0, cbS = 0;
+            var lookupL = Field<byte[]>("_cbLookupL"); var lookupS = Field<byte[]>("_cbLookupS");
+            var windows = Field<byte[]>("_cbwLookupS");
+            // Preserve the tail between sample-rate changes, as the decoder's
+            // short-window lookup initialization does.
+            for (int i = 0; i < 576; i++)
+            {
+                if (i == l[cbL + 1]) cbL++;
+                if (i == s[cbS + 1] * 3) cbS++;
+                lookupL[i] = (byte)cbL; lookupS[i] = (byte)cbS;
+            }
+            int offset = 0;
+            for (int band = 0; band < 12; band++)
+            for (int window = 0; window < 3; window++)
+            for (int i = s[band]; i < s[band + 1]; i++) windows[offset++] = (byte)window;
+            for (int scenario = 0; scenario < 48; scenario++)
+            {
+                int gr = scenario & 1, ch = (scenario >> 1) & 1;
+                int block = scenario % 5;
+                Field<bool[][]>("_blockSplitFlag")[gr][ch] = block != 0;
+                Field<int[][]>("_blockType")[gr][ch] = block == 1 ? 1 : block == 4 ? 3 : 2;
+                Field<bool[][]>("_mixedBlockFlag")[gr][ch] = block == 3;
+                Field<int[][]>("_preflag")[gr][ch] = scenario & 1;
+                Field<float[][]>("_globalGain")[gr][ch] = MathF.Pow(2f, (random.Next(256) - 210) / 4f);
+                Field<float[][]>("_scalefacScale")[gr][ch] = (scenario & 1) == 0 ? 0.5f : 1f;
+                for (int window = 0; window < 3; window++)
+                    Field<float[][][]>("_subblockGain")[gr][ch][window] = -2f * random.Next(8);
+                foreach (var factors in Field<int[][][]>("_scalefac")[ch])
+                    for (int i = 0; i < factors.Length; i++) factors[i] = random.Next(16);
+                foreach (int length in new[] { 0, 1, 7, 18, 35, 36, 37, 71, 72, 73, 575, 576 })
+                {
+                    var input = Input(length, scenario % 10, random);
+                    var expected = input.Select((value, i) => scalar(i, value, gr, ch)).ToArray();
+                    batch(input, gr, ch);
+                    Equal(expected, input, $"Dequantization rate={rate} scenario={scenario} length={length}");
+                }
+            }
+        }
+        Field<bool[][]>("_blockSplitFlag")[0][0] = false;
+        Field<float[][]>("_globalGain")[0][0] = 1f;
+        Field<int[][]>("_preflag")[0][0] = 0;
+        Array.Clear(Field<int[][][]>("_scalefac")[0][3]);
+        var work = Enumerable.Repeat(1f, 576).ToArray();
+        AssertNoAllocation(() => batch(work, 0, 0), "batch dequantization");
     }
 
     private static void VerifySynthesis(DecoderAssembly scalar, DecoderAssembly vector)

@@ -1432,22 +1432,22 @@ namespace NLayer.Decoder
             while (idx < bigValueCount && idx < region1Start)
             {
                 Huffman.Decode(_bitRes, h, out x, out y);
-                _samples[ch][idx] = Dequantize(idx, x, gr, ch); ++idx;
-                _samples[ch][idx] = Dequantize(idx, y, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, x, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, y, gr, ch); ++idx;
             }
             h = _tableSelect[gr][ch][1];
             while (idx < bigValueCount && idx < region2Start)
             {
                 Huffman.Decode(_bitRes, h, out x, out y);
-                _samples[ch][idx] = Dequantize(idx, x, gr, ch); ++idx;
-                _samples[ch][idx] = Dequantize(idx, y, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, x, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, y, gr, ch); ++idx;
             }
             h = _tableSelect[gr][ch][2];
             while (idx < bigValueCount)
             {
                 Huffman.Decode(_bitRes, h, out x, out y);
-                _samples[ch][idx] = Dequantize(idx, x, gr, ch); ++idx;
-                _samples[ch][idx] = Dequantize(idx, y, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, x, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, y, gr, ch); ++idx;
             }
 
             // count1 section
@@ -1458,11 +1458,16 @@ namespace NLayer.Decoder
             while (part3end > _bitRes.BitsRead && idx < SBLIMIT * SSLIMIT - 3)
             {
                 Huffman.Decode(_bitRes, h, out x, out y, out v, out w);
-                _samples[ch][idx] = Dequantize(idx, v, gr, ch); ++idx;
-                _samples[ch][idx] = Dequantize(idx, w, gr, ch); ++idx;
-                _samples[ch][idx] = Dequantize(idx, x, gr, ch); ++idx;
-                _samples[ch][idx] = Dequantize(idx, y, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, v, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, w, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, x, gr, ch); ++idx;
+                _samples[ch][idx] = DequantizeOrBuffer(idx, y, gr, ch); ++idx;
             }
+
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD && !NLAYER_DISABLE_BATCH_DEQUANTIZATION
+            // Include the final count1 group before the existing rewind/clear.
+            DequantizeSamples(_samples[ch].AsSpan()[..idx], gr, ch);
+#endif
 
             // adjust the bit stream if we're off somehow
             if (_bitRes.BitsRead > part3end)
@@ -1483,6 +1488,17 @@ namespace NLayer.Decoder
             {
                 Array.Clear(_samples[ch], idx, SBLIMIT * SSLIMIT + 3 - idx);
             }
+        }
+
+        float DequantizeOrBuffer(int idx, float val, int gr, int ch)
+        {
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD && !NLAYER_DISABLE_BATCH_DEQUANTIZATION
+            // Reuse the sample buffer for unscaled coefficients until the
+            // granule's band-wise scaling pass. Older targets scale immediately.
+            return val;
+#else
+            return Dequantize(idx, val, gr, ch);
+#endif
         }
 
         float Dequantize(int idx, float val, int gr, int ch)

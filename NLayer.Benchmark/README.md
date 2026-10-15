@@ -167,3 +167,25 @@ The prefix lookup works on every library target. `NLayerDisableHuffmanLookup`
 retains the linked-list implementation as a build-only reference/rollback option.
 The additional four-accumulator window optimization applies only to .NET 10's
 256-bit path; the previous 128-bit loop is retained after measurement.
+
+## Reservoir and dequantization
+
+Measured comparisons and validation: [reservoir and dequantization results](Results/2026-10-15-reservoir/README.md).
+
+`DequantizationBenchmarks` compares the original per-coefficient scaling loop
+with span-based band scaling for long, short and mixed blocks. Setup compiles
+the reference loop to avoid a delegate dispatch per coefficient. Input restoration
+is included equally; all buffers and delegates are allocated before measurement.
+Set `NLAYER_REFERENCE_ASSEMBLY` to a previous decoder, as for the other kernels.
+
+The .NET 10 decoder buffers unscaled coefficients in its existing sample array,
+then applies global gain followed by the band's scale, preserving both rounding
+steps and the scalar zero fast path. It uses 256-bit, 128-bit or scalar arithmetic
+according to available acceleration. Other targets retain immediate scaling.
+`NLayerDisableBatchDequantization=true` is a build-only switch for isolating this
+change while leaving synthesis SIMD and Huffman lookup enabled.
+
+Verification also compares 0..32-bit reservoir reads, peeks, skips and rewinds,
+and band scaling across all nine sample-rate layouts, block types, granules,
+channels, partial bands, signed zeros, subnormals and retained lookup history
+after sample-rate changes. No new per-frame or per-granule buffers are allocated.

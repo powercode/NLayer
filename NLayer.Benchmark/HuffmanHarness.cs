@@ -5,6 +5,7 @@ namespace NLayer.Benchmark;
 
 internal delegate void DecodePair(int table, out float x, out float y);
 internal delegate void DecodeQuad(int table, out float x, out float y, out float v, out float w);
+internal delegate int PeekBits(int count, out int readCount);
 
 // Reflection/expression compilation happens only during setup. Timed decode and
 // reset calls use delegates and preallocated reservoir storage, without boxing.
@@ -18,6 +19,10 @@ internal sealed class HuffmanHarness
     internal readonly Func<int, byte> Symbol;
     internal readonly DecodePair Pair;
     internal readonly DecodeQuad Quad;
+    internal readonly PeekBits Peek;
+    internal readonly Func<int, int> Get;
+    internal readonly Func<int> GetOne;
+    internal readonly Action<int> Skip, Rewind;
 
     internal HuffmanHarness(object reservoir)
     {
@@ -35,6 +40,11 @@ internal sealed class HuffmanHarness
             Expression.Empty()), start, end, left, read).Compile();
         _bitsRead = type.GetProperty("BitsRead")!.GetMethod!.CreateDelegate<Func<long>>(reservoir);
         _available = type.GetProperty("BitsAvailable")!.GetMethod!.CreateDelegate<Func<int>>(reservoir);
+        Peek = type.GetMethod("TryPeekBits")!.CreateDelegate<PeekBits>(reservoir);
+        Get = type.GetMethod("GetBits")!.CreateDelegate<Func<int, int>>(reservoir);
+        GetOne = type.GetMethod("Get1Bit")!.CreateDelegate<Func<int>>(reservoir);
+        Skip = type.GetMethod("SkipBits")!.CreateDelegate<Action<int>>(reservoir);
+        Rewind = type.GetMethod("RewindBits")!.CreateDelegate<Action<int>>(reservoir);
         var huffman = type.Assembly.GetType("NLayer.Decoder.Huffman", true)!;
         Symbol = Bind<Func<int, byte>>("DecodeSymbol", 0);
         Pair = Bind<DecodePair>("Decode", 2);

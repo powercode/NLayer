@@ -7,7 +7,10 @@ namespace NLayer.Decoder
         // Per the spec, the maximum buffer size for layer III is 7680 bits, which is 960 bytes.
         // The only catch is if we're decoding a "free" frame, which could be a lot more (since
         //  some encoders allow higher bitrates to maintain audio transparency).
-        byte[] _buf = new byte[8192];
+        // Keep the divisor constant so circular indexing needs no integer
+        // division. Retain remainder semantics for negative intermediate values.
+        const int BufferSize = 8192;
+        readonly byte[] _buf = new byte[BufferSize];
         int _start = 0, _end = -1, _bitsLeft = 0;
         long _bitsRead = 0L;
 
@@ -32,7 +35,7 @@ namespace NLayer.Decoder
                 var temp = frame.ReadBits(8);
                 if (temp == -1) throw new System.IO.InvalidDataException("Frame did not have enough bytes!");
                 _buf[++_end] = (byte)temp;
-                if (_end == _buf.Length - 1) _end = -1;
+                if (_end == BufferSize - 1) _end = -1;
             }
 
             _bitsLeft = 8;
@@ -46,9 +49,9 @@ namespace NLayer.Decoder
                 // it's not the start of the stream so calculate _start based on whether we have enough bytes left
 
                 // if we have enough bytes, reset start to match overlap
-                if ((originalEnd + 1 - _start + _buf.Length) % _buf.Length >= overlap)
+                if ((originalEnd + 1 - _start + BufferSize) % BufferSize >= overlap)
                 {
-                    _start = (originalEnd + 1 - overlap + _buf.Length) % _buf.Length;
+                    _start = (originalEnd + 1 - overlap + BufferSize) % BufferSize;
                     return true;
                 }
                 // otherwise, just set start to match the start of the frame (we probably skipped a frame)
@@ -80,7 +83,7 @@ namespace NLayer.Decoder
             ++_bitsRead;
             var val = (_buf[_start] >> _bitsLeft) & 1;
 
-            if (_bitsLeft == 0 && (_start = (_start + 1) % _buf.Length) != _end + 1)
+            if (_bitsLeft == 0 && (_start = (_start + 1) % BufferSize) != _end + 1)
             {
                 _bitsLeft = 8;
             }
@@ -121,7 +124,7 @@ namespace NLayer.Decoder
             while (count > 0)
             {
                 // advance the start marker, and if we just advanced it past the end of the buffer, bail
-                if ((resStart = (resStart + 1) % _buf.Length) == _end + 1)
+                if ((resStart = (resStart + 1) % BufferSize) == _end + 1)
                 {
                     break;
                 }
@@ -149,7 +152,7 @@ namespace NLayer.Decoder
             {
                 if (_bitsLeft > 0)
                 {
-                    return (((_end + _buf.Length) - _start) % _buf.Length) * 8 + _bitsLeft;
+                    return (((_end + BufferSize) - _start) % BufferSize) * 8 + _bitsLeft;
                 }
                 return 0;
             }
@@ -169,7 +172,7 @@ namespace NLayer.Decoder
 
                 // now calculate the new positions
                 var offset = (8 - _bitsLeft) + count;
-                _start = ((offset / 8) + _start) % _buf.Length;
+                _start = ((offset / 8) + _start) % BufferSize;
                 _bitsLeft = 8 - (offset % 8);
 
                 _bitsRead += count;
@@ -187,7 +190,7 @@ namespace NLayer.Decoder
             }
             while (_start < 0)
             {
-                _start += _buf.Length;
+                _start += BufferSize;
             }
         }
 

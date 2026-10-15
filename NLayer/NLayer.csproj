@@ -4,6 +4,7 @@
     <TargetFrameworks>netstandard2.0;net8.0;net10.0</TargetFrameworks>
     <Description>Fully Managed MPEG 1 &amp; 2 Decoder for Layers 1, 2, &amp; 3</Description>
     <PackageTags>audio csharp mp3</PackageTags>
+    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(NLayerDisableSimd)' == 'true'">
@@ -12,6 +13,10 @@
 
   <PropertyGroup Condition="'$(NLayerDisableHuffmanLookup)' == 'true'">
     <DefineConstants>$(DefineConstants);NLAYER_DISABLE_HUFFMAN_LOOKUP</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(NLayerDisableBatchDequantization)' == 'true'">
+    <DefineConstants>$(DefineConstants);NLAYER_DISABLE_BATCH_DEQUANTIZATION</DefineConstants>
   </PropertyGroup>
 
 </Project>
