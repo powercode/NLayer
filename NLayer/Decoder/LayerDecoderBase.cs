@@ -30,11 +30,12 @@
  *
  */
 
+using System;
 using System.Collections.Generic;
 
 namespace NLayer.Decoder
 {
-    abstract class LayerDecoderBase
+    abstract partial class LayerDecoderBase
     {
         protected const int SBLIMIT = 32;
 
@@ -224,9 +225,16 @@ namespace NLayer.Decoder
 
             if (_eq != null)
             {
-                for (int i = 0; i < 32; i++)
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+                if (Simd.IsSupported)
+                    Simd.Multiply(data.AsSpan(0, 32), _eq, data.AsSpan(0, 32));
+                else
+#endif
                 {
-                    data[i] *= _eq[i];
+                    for (int i = 0; i < 32; i++)
+                    {
+                        data[i] *= _eq[i];
+                    }
                 }
             }
 
@@ -262,10 +270,17 @@ namespace NLayer.Decoder
         {
             int i;
 
-            for (i = 0; i < 16; i++)
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+            if (Simd.IsSupported)
+                DctButterflySimd(_in, ei32, oi32, SynthesisCoefficients.Dct32);
+            else
+#endif
             {
-                ei32[i] = _in[i] + _in[31 - i];
-                oi32[i] = (_in[i] - _in[31 - i]) * SYNTH_COS64_TABLE[2 * i];
+                for (i = 0; i < 16; i++)
+                {
+                    ei32[i] = _in[i] + _in[31 - i];
+                    oi32[i] = (_in[i] - _in[31 - i]) * SYNTH_COS64_TABLE[2 * i];
+                }
             }
 
             DCT16(ei32, eo32);
@@ -284,32 +299,39 @@ namespace NLayer.Decoder
 
         void DCT16(float[] _in, float[] _out)
         {
-            float a, b;
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+            if (Simd.IsSupported)
+                DctButterflySimd(_in, ei16, oi16, SynthesisCoefficients.Dct16);
+            else
+#endif
+            {
+                float a, b;
 
-            a = _in[0]; b = _in[15];
-            ei16[0] = a + b;
-            oi16[0] = (a - b) * SYNTH_COS64_TABLE[1];
-            a = _in[1]; b = _in[14];
-            ei16[1] = a + b;
-            oi16[1] = (a - b) * SYNTH_COS64_TABLE[5];
-            a = _in[2]; b = _in[13];
-            ei16[2] = a + b;
-            oi16[2] = (a - b) * SYNTH_COS64_TABLE[9];
-            a = _in[3]; b = _in[12];
-            ei16[3] = a + b;
-            oi16[3] = (a - b) * SYNTH_COS64_TABLE[13];
-            a = _in[4]; b = _in[11];
-            ei16[4] = a + b;
-            oi16[4] = (a - b) * SYNTH_COS64_TABLE[17];
-            a = _in[5]; b = _in[10];
-            ei16[5] = a + b;
-            oi16[5] = (a - b) * SYNTH_COS64_TABLE[21];
-            a = _in[6]; b = _in[9];
-            ei16[6] = a + b;
-            oi16[6] = (a - b) * SYNTH_COS64_TABLE[25];
-            a = _in[7]; b = _in[8];
-            ei16[7] = a + b;
-            oi16[7] = (a - b) * SYNTH_COS64_TABLE[29];
+                a = _in[0]; b = _in[15];
+                ei16[0] = a + b;
+                oi16[0] = (a - b) * SYNTH_COS64_TABLE[1];
+                a = _in[1]; b = _in[14];
+                ei16[1] = a + b;
+                oi16[1] = (a - b) * SYNTH_COS64_TABLE[5];
+                a = _in[2]; b = _in[13];
+                ei16[2] = a + b;
+                oi16[2] = (a - b) * SYNTH_COS64_TABLE[9];
+                a = _in[3]; b = _in[12];
+                ei16[3] = a + b;
+                oi16[3] = (a - b) * SYNTH_COS64_TABLE[13];
+                a = _in[4]; b = _in[11];
+                ei16[4] = a + b;
+                oi16[4] = (a - b) * SYNTH_COS64_TABLE[17];
+                a = _in[5]; b = _in[10];
+                ei16[5] = a + b;
+                oi16[5] = (a - b) * SYNTH_COS64_TABLE[21];
+                a = _in[6]; b = _in[9];
+                ei16[6] = a + b;
+                oi16[6] = (a - b) * SYNTH_COS64_TABLE[25];
+                a = _in[7]; b = _in[8];
+                ei16[7] = a + b;
+                oi16[7] = (a - b) * SYNTH_COS64_TABLE[29];
+            }
 
             DCT8(ei16, eo16);
             DCT8(oi16, oo16);
@@ -379,6 +401,13 @@ namespace NLayer.Decoder
 
         void BuildUVec(float[] u_vec, float[] cur_synbuf, int k)
         {
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+            if (Simd.IsSupported)
+            {
+                BuildUVecSimd(u_vec, cur_synbuf, k);
+                return;
+            }
+#endif
             int i, j, uvp = 0;
 
             for (j = 0; j < 8; j++)
@@ -409,6 +438,13 @@ namespace NLayer.Decoder
 
         void DewindowOutput(float[] u_vec, float[] samples)
         {
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+            if (Simd.IsSupported)
+            {
+                DewindowOutputSimd(u_vec, samples);
+                return;
+            }
+#endif
             for (int i = 0; i < 512; i++)
             {
                 u_vec[i] *= DEWINDOW_TABLE[i];

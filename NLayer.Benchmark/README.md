@@ -1,5 +1,8 @@
 # NLayer decoder benchmarks
 
+The first SIMD implementation and its default-job comparison are documented in
+[the 2026-10-15 results](Results/2026-10-15-simd/README.md).
+
 Run from the repository root, outside the debugger, using the .NET 10 SDK:
 
 ```powershell
@@ -9,6 +12,12 @@ dotnet run --project NLayer.Benchmark -c Release -- --filter '*' --artifacts Ben
 For a faster initial measurement, add `--job short`. For discovery only, use
 `--list flat`. To focus on one area, use `--filter '*MpegFile*'`,
 `--filter '*Polyphase*'`, or `--filter '*Hybrid*'`.
+
+The original ten cases can be selected without the additional stage benchmarks:
+
+```powershell
+dotnet run --project NLayer.Benchmark -c Release -- --filter '*MpegFileBenchmarks*' '*PolyphaseBenchmarks*' '*HybridMdctBenchmarks*'
+```
 
 BenchmarkDotNet records runtime/CPU information, timing distributions and managed
 allocations in the artifacts directory. Save the baseline reports before making
@@ -57,3 +66,53 @@ could not identify the processor or set the power plan. Some short-run confidenc
 intervals are wide; these reports establish an initial reference, not evidence
 of small differences between APIs or window types. Full logs and CSV/HTML reports
 are retained locally under `BenchmarkDotNet.Artifacts/baseline` (git-ignored).
+
+## SIMD correctness
+
+```powershell
+./NLayer.Benchmark/Verify-Simd.ps1
+```
+
+This builds .NET 10 with `-p:NLayerDisableSimd=true` into `NLayer/bin/scalar`,
+then builds the optimized verifier into a separate output directory. It compares
+the two assemblies in isolated load contexts on the same runtime in three fresh
+processes: native vector width, AVX disabled (128-bit on x64), and all hardware
+intrinsics disabled. The original environment variables are restored afterwards.
+The printed vector widths show which paths the current machine exercised.
+
+Comparisons use sample bit patterns, including negative zero, subnormals, silence,
+impulses and seeded random inputs at several magnitudes. They exercise synthesis
+history wraparound, equalization, both channels, reset/replay, MDCT block types
+and transitions, output sentinels, and full generated-MP3 decoding through array
+and span APIs at several buffer sizes and every stereo output mode. Primed
+synthesis and hybrid kernels must allocate zero bytes during repeated calls.
+
+To compare against an existing scalar .NET 10 assembly instead, pass
+`-ScalarAssembly <path>` to the script. The verifier rejects an assembly containing
+the SIMD implementation. It can also be run directly:
+
+```powershell
+dotnet NLayer.Benchmark/bin/verify/NLayer.Benchmark.dll --verify-simd NLayer/bin/scalar/NLayer.dll
+```
+
+## Individual stages
+
+`SynthesisStageBenchmarks` measures buffer rearrangement, window accumulation,
+DCT32, DCT16, and synthesis with equalization. `HybridStageBenchmarks` measures
+the long transform, long blocks with windowing, and short blocks with overlap.
+They restore inputs for methods that mutate them, including the same copy cost
+for scalar and SIMD. Every stage uses preallocated buffers and closed delegates.
+
+Set an absolute scalar assembly path to compare implementations in the same job:
+
+```powershell
+$env:NLAYER_SCALAR_ASSEMBLY = (Resolve-Path NLayer/bin/scalar/NLayer.dll).Path
+dotnet run --project NLayer.Benchmark -c Release -- --filter '*StageBenchmarks*' --artifacts BenchmarkDotNet.Artifacts/stages
+Remove-Item Env:NLAYER_SCALAR_ASSEMBLY
+```
+
+On a hybrid-core CPU, use the same `--affinity 1` mask for baseline and optimized
+runs to pin benchmark processes to logical CPU zero. Run measurements sequentially.
+When offline NuGet vulnerability auditing prevents BenchmarkDotNet's generated
+project from restoring, set `$env:NuGetAudit = 'false'` for that measurement shell.
+No repository-wide audit setting is changed.

@@ -38,14 +38,14 @@ namespace NLayer.Decoder
     /// <summary>
     /// Class Implementing Layer 3 Decoder.
     /// </summary>
-    sealed class LayerIIIDecoder : LayerDecoderBase
+    sealed partial class LayerIIIDecoder : LayerDecoderBase
     {
         const int SSLIMIT = 18;
 
         #region Child Classes
 
         // This class is based on the Fluendo hybrid logic.
-        class HybridMDCT
+        partial class HybridMDCT
         {
             const float PI = (float)Math.PI;
 
@@ -190,9 +190,16 @@ namespace NLayer.Decoder
                 }
 
                 // overlap
-                for (int i = 0; i < SSLIMIT * SBLIMIT; i++)
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+                if (Simd.IsSupported)
+                    Simd.Add(prevblck, fsIn.AsSpan(0, SSLIMIT * SBLIMIT));
+                else
+#endif
                 {
-                    fsIn[i] += prevblck[i];
+                    for (int i = 0; i < SSLIMIT * SBLIMIT; i++)
+                    {
+                        fsIn[i] += prevblck[i];
+                    }
                 }
             }
 
@@ -224,6 +231,15 @@ namespace NLayer.Decoder
 
                     // window
                     var win = _swin[blockType];
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+                    if (Simd.IsSupported)
+                    {
+                        Simd.Multiply(_imdctResult.AsSpan(0, SSLIMIT), win.AsSpan(0, SSLIMIT), fsIn.AsSpan(ofs, SSLIMIT));
+                        Simd.Multiply(_imdctResult.AsSpan(SSLIMIT, SSLIMIT), win.AsSpan(SSLIMIT, SSLIMIT), nextblck.AsSpan(ofs, SSLIMIT));
+                        ofs += SSLIMIT;
+                        continue;
+                    }
+#endif
                     int i = 0;
                     for (; i < SSLIMIT; i++)
                     {
@@ -242,6 +258,11 @@ namespace NLayer.Decoder
                 int i;
                 float[] H = _longImdct_H, h = _longImdct_h, even = _longImdct_even, odd = _longImdct_odd, even_idct = _longImdct_evenIdct, odd_idct = _longImdct_oddIdct;
 
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+                if (Simd.IsSupported)
+                    AdjacentSumsSimd(invec, H);
+                else
+#endif
                 for (i = 0; i < 17; i++)
                     H[i] = invec[i] + invec[i + 1];
 
@@ -257,14 +278,21 @@ namespace NLayer.Decoder
                 imdct_9pt(even, even_idct);
                 imdct_9pt(odd, odd_idct);
 
-                for (i = 0; i < 9; i++)
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+                if (Simd.IsSupported)
+                    ScaleLongSimd(even_idct, odd_idct, h);
+                else
+#endif
                 {
-                    odd_idct[i] *= ICOS36_A(i);
-                    h[i] = (even_idct[i] + odd_idct[i]) * ICOS72_A(i);
-                }
-                for ( /* i = 9 */ ; i < 18; i++)
-                {
-                    h[i] = (even_idct[17 - i] - odd_idct[17 - i]) * ICOS72_A(i);
+                    for (i = 0; i < 9; i++)
+                    {
+                        odd_idct[i] *= ICOS36_A(i);
+                        h[i] = (even_idct[i] + odd_idct[i]) * ICOS72_A(i);
+                    }
+                    for ( /* i = 9 */ ; i < 18; i++)
+                    {
+                        h[i] = (even_idct[17 - i] - odd_idct[17 - i]) * ICOS72_A(i);
+                    }
                 }
 
                 /* Rearrange the 18 values from the IDCT to the output vector */
@@ -399,6 +427,11 @@ namespace NLayer.Decoder
 
                     // now the next 6
                     ShortIMDCT(_imdctTemp, 6, _imdctResult);
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+                    if (Simd.IsSupported)
+                        Simd.Add(_imdctResult.AsSpan(0, 6), fsIn.AsSpan(ofs + 12, 6));
+                    else
+#endif
                     for (int i = 0; i < 6; i++)
                     {
                         // add the first half to tsOut
@@ -408,6 +441,11 @@ namespace NLayer.Decoder
 
                     // now the final 6
                     ShortIMDCT(_imdctTemp, 12, _imdctResult);
+#if NET10_0_OR_GREATER && !NLAYER_DISABLE_SIMD
+                    if (Simd.IsSupported)
+                        Simd.Add(_imdctResult.AsSpan(0, 6), nextblck.AsSpan(ofs, 6));
+                    else
+#endif
                     for (int i = 0; i < 6; i++)
                     {
                         // add the first half to nextblck

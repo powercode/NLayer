@@ -6,4 +6,8 @@
     <PackageTags>audio csharp mp3</PackageTags>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(NLayerDisableSimd)' == 'true'">
+    <DefineConstants>$(DefineConstants);NLAYER_DISABLE_SIMD</DefineConstants>
+  </PropertyGroup>
+
 </Project>
