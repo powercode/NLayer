@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="README.md" />
+  </Folder>  
+  <Project Path="NLayer.NAudioSupport/NLayer.NAudioSupport.csproj" />
+  <Project Path="NLayer.Tests/NLayer.Tests.csproj" />
+  <Project Path="NLayer/NLayer.csproj" />
+  <Project Path="TestApp/TestApp.csproj" />
+</Solution>
